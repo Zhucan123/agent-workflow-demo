@@ -74,7 +74,12 @@ app = FastAPI(title="Agent Workflow Demo", version="0.1.0", lifespan=lifespan)
 
 @app.get("/healthz")
 async def healthz() -> dict:
-    return {"status": "ok", "llm_provider": getattr(app.state.llm, "provider", "n/a")}
+    return {
+        "status": "ok",
+        "llm_provider": getattr(app.state.llm, "provider", "n/a"),
+        "model": config.MODEL,
+        "mcp": config.MCP_MODE,
+    }
 
 
 async def _run_pipeline(session_id: str, task: str, emit):

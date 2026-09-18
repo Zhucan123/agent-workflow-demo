@@ -116,6 +116,10 @@ function syncThemeBtn() {
   $('themeBtn').textContent = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
 }
 syncThemeBtn();
+fetch('/healthz').then(r => r.json()).then(h => {
+  $('prov').textContent = 'llm: ' + (h.llm_provider || '-');
+  $('model').textContent = 'model: ' + (h.model || '-');
+});
 
 function bubble(text, hint, cls, typing) {
   const d = document.createElement('div');

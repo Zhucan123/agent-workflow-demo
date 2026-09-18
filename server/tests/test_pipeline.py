@@ -115,7 +115,10 @@ def test_healthz():
     with TestClient(app) as client:
         resp = client.get("/healthz")
     assert resp.status_code == 200
-    assert resp.json()["status"] == "ok"
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["llm_provider"] == "stub"  # test env has no key
+    assert body["model"]
 
 
 def test_playground_product_shell():
