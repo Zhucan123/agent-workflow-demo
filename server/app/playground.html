@@ -249,13 +249,16 @@ function handleEvent(ev, p) {
       if (p.tool === 'rag_search') renderHits(p);
       if (p.decision === 'denied' || (p.ok === false && p.decision)) {
         $('queue').innerHTML = '<div class="empty">Action denied by user</div>';
+        bubble('You denied this action — the step was skipped.', p.tool.toUpperCase());
       } else if (p.decision === 'allow' && p.ok) {
         $('queue').innerHTML = '<div class="empty">Action completed</div>';
       }
-      if (p.ok && p.tool !== 'rag_search') {
+      if (p.ok && p.tool !== 'rag_search' && !p.decision) {
         bubble('Done: ' + (p.output ? JSON.stringify(p.output).slice(0,140) : 'ok'), p.tool.toUpperCase());
-      } else if (!p.ok) {
-        bubble('Failed: ' + (p.error || 'unknown error'), p.tool.toUpperCase(), 'err');
+      } else if (!p.ok && !p.decision && p.error) {
+        bubble('Failed: ' + p.error, p.tool.toUpperCase(), 'err');
+      } else if (!p.ok && !p.decision) {
+        bubble('Failed: unknown error', p.tool.toUpperCase(), 'err');
       }
       trail(p.ok ? 'tool.result' : 'tool.result×', (p.tool + (p.ok ? '' : ' ✗ '+p.error)).slice(0,110),
         p.ok ? 'good' : 'bad');
