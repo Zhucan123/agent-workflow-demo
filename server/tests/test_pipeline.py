@@ -127,4 +127,4 @@ def test_playground_product_shell():
     html = resp.text
     assert "id=\"chat\"" in html and "id=\"composer\"" in html
     assert "id=\"kb\"" in html and "id=\"queue\"" in html and "id=\"trail\"" in html
-    assert "data-step" in html  # approval buttons carry their action id
+    assert "data-action" in html  # approval buttons carry their action id

@@ -57,6 +57,8 @@
   .tl.bad{border-color:var(--err)} .tl.good{border-color:var(--ok)}
   .empty{color:var(--mut);font-size:11.5px;border:1px dashed var(--border);
     border-radius:8px;padding:10px;text-align:center}
+  .cursor{animation:blink .8s step-start infinite;color:var(--acc)}
+  @keyframes blink{50%{opacity:0}}
   ::-webkit-scrollbar{width:8px} ::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
 </style>
 </head>
@@ -91,14 +93,26 @@
 <script>
 let sessionId = null;
 const $ = id => document.getElementById(id);
+const scrollBottom = () => { const m = $('messages'); m.scrollTop = m.scrollHeight; };
 
-function bubble(text, hint, cls) {
+function bubble(text, hint, cls, typing) {
   const d = document.createElement('div');
   d.className = 'msg ai' + (cls?' '+cls:'');
   if (hint) { const h = document.createElement('span'); h.className='hint'; h.textContent=hint; d.appendChild(h); }
-  const t = document.createElement('span'); t.textContent = text; d.appendChild(t);
+  const t = document.createElement('span'); d.appendChild(t);
   $('messages').appendChild(d);
-  $('messages').scrollTop = $('messages').scrollHeight;
+  if (!typing) { t.textContent = text; scrollBottom(); return; }
+  const cursor = document.createElement('span'); cursor.className = 'cursor'; cursor.textContent = '▍';
+  d.appendChild(cursor);
+  let i = 0;
+  d._timer = setInterval(() => {
+    t.textContent = text.slice(0, i++);
+    scrollBottom();
+    if (i > text.length) {
+      clearInterval(d._timer); d._timer = null;
+      if (cursor.parentNode) cursor.remove();
+    }
+  }, 16);
 }
 function trail(ev, text, cls) {
   const d = document.createElement('div');
@@ -181,47 +195,47 @@ function handleEvent(ev, p) {
       break;
     case 'agent.plan':
       bubble((p.reason||'') + '\nSteps: ' + (p.steps||[]).map(s=>s.tool).join(' → '),
-        'PLANNER', undefined);
+        'PLANNER', undefined, true);
       trail('agent.plan', (p.steps||[]).map(s=>s.tool+'('+JSON.stringify(s.args)+')').join(' • '));
       break;
     case 'tool.call':
       if (p.tool === 'rag_search') trail('tool.call', 'rag_search looking up docs…');
       else if (p.tool === 'calculator') trail('tool.call', 'calculator '+JSON.stringify(p.args));
-      else if (p.tool === 'file_store' || p.tool.startsWith('mcp_')) {
-        const card = document.createElement('div'); card.className = 'card';
-        card.innerHTML = '<span class="tag">'+p.tool+'</span><span class="state">awaiting approval</span>' +
-          '<p>'+JSON.stringify(p.args).slice(0,120)+'</p>' +
-          '<div class="approve">' +
-          '<button class="btn allow" data-step="'+p.step_id+'" ' +
-          'onclick="approve(\'act_\'+this.dataset.step,\'allow\',this.parentNode.parentNode)">Approve</button>' +
-          '<button class="btn deny" data-step="'+p.step_id+'" ' +
-          'onclick="approve(\'act_\'+this.dataset.step,\'deny\',this.parentNode.parentNode)">Deny</button>' +
-          '</div>';
-        $('queue').innerHTML = ''; $('queue').appendChild(card);
-        trail(p.tool, 'awaiting approval: '+JSON.stringify(p.args).slice(0,80));
-        bubble('This action is waiting for your approval.', 'APPROVAL REQUIRED');
-      } else trail('tool.call', p.tool + ' ' + JSON.stringify(p.args));
+      else trail('tool.call', p.tool + ' ' + JSON.stringify(p.args));
       break;
     case 'approval.request':
-      trail('approval.request', p.action_id + ' timeout ' + p.timeout_s + 's');
+      {
+        const card = document.createElement('div'); card.className = 'card';
+        card.innerHTML = '<span class="tag">'+p.tool+'</span><span class="state">awaiting approval</span>' +
+          '<p>'+(p.summary||'').slice(0,150)+'</p>' +
+          '<div class="approve">' +
+          '<button class="btn allow" data-action="'+p.action_id+'" ' +
+          'onclick="approve(this.dataset.action,\'allow\',this.parentNode.parentNode)">Approve</button>' +
+          '<button class="btn deny" data-action="'+p.action_id+'" ' +
+          'onclick="approve(this.dataset.action,\'deny\',this.parentNode.parentNode)">Deny</button>' +
+          '</div>';
+        $('queue').innerHTML = ''; $('queue').appendChild(card);
+        trail('approval.request', p.action_id + ' timeout ' + p.timeout_s + 's');
+        bubble('This action is waiting for your approval.', 'APPROVAL REQUIRED');
+      }
       break;
     case 'tool.result':
       if (p.tool === 'rag_search') renderHits(p);
-      else if (p.tool === 'file_store' || p.tool.startsWith('mcp_')) {
-        if (p.decision === 'denied' || (p.ok === false && p.decision)) {
-          $('queue').innerHTML = '<div class="empty">Action denied by user</div>';
-        } else if (p.ok) {
-          $('queue').innerHTML = '<div class="empty">Action completed</div>';
-          bubble('Done: ' + (p.output ? JSON.stringify(p.output).slice(0,140) : 'ok'), p.tool.toUpperCase());
-        } else {
-          bubble('Failed: ' + (p.error || 'unknown error'), p.tool.toUpperCase(), 'err');
-        }
+      if (p.decision === 'denied' || (p.ok === false && p.decision)) {
+        $('queue').innerHTML = '<div class="empty">Action denied by user</div>';
+      } else if (p.decision === 'allow' && p.ok) {
+        $('queue').innerHTML = '<div class="empty">Action completed</div>';
+      }
+      if (p.ok && p.tool !== 'rag_search') {
+        bubble('Done: ' + (p.output ? JSON.stringify(p.output).slice(0,140) : 'ok'), p.tool.toUpperCase());
+      } else if (!p.ok) {
+        bubble('Failed: ' + (p.error || 'unknown error'), p.tool.toUpperCase(), 'err');
       }
       trail(p.ok ? 'tool.result' : 'tool.result×', (p.tool + (p.ok ? '' : ' ✗ '+p.error)).slice(0,110),
         p.ok ? 'good' : 'bad');
       break;
     case 'agent.done':
-      bubble(p.summary || '', 'COMPLETED');
+      bubble(p.summary || '', 'COMPLETED', undefined, true);
       trail('agent.done', 'stats ok=' + p.tool_stats.ok + '/' + p.tool_stats.total +
         ' denied=' + p.tool_stats.denied + ' ' + p.duration_ms + 'ms', 'good');
       break;
