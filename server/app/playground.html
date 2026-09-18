@@ -168,6 +168,10 @@ function toolKind(name) {
   if (name === 'file_store') return 'file';
   return 'other';
 }
+function stepNo(p) {
+  const m = String(p.step_id || '').match(/\d+/);
+  return m ? '#' + m[0] : '';
+}
 function renderHits(payload) {
   const out = payload && payload.output && payload.output.hits;
   if (!out || !out.length) { $('kb').innerHTML = '<div class="empty">No matches</div>'; return; }
@@ -196,12 +200,12 @@ const TOOL_LABELS = {
 };
 function toolLabel(name) { return TOOL_LABELS[name] || name; }
 
-function toolBubble(name, detail, ok) {
+function toolBubble(name, detail, ok, tag) {
   const d = document.createElement('div');
   d.className = 'msg ai' + (ok === false ? ' err' : '');
   const chip = document.createElement('span'); chip.className = 'toolchip';
   const dot = document.createElement('span'); dot.className = 'dot dot-' + toolKind(name);
-  const nm = document.createElement('span'); nm.textContent = toolLabel(name);
+  const nm = document.createElement('span'); nm.textContent = (tag ? tag + ' ' : '') + toolLabel(name);
   chip.appendChild(dot); chip.appendChild(nm); d.appendChild(chip);
   const t = document.createElement('span'); t.textContent = detail; d.appendChild(t);
   $('messages').appendChild(d);
@@ -271,20 +275,18 @@ function handleEvent(ev, p) {
       $('sess').textContent = p.session_id.slice(0, 18);
       break;
     case 'agent.plan':
-      bubble((p.reason||'') + '\nSteps: ' + (p.steps||[]).map(s=>s.tool).join(' → '),
-        'PLANNER', undefined, true);
-      trail('agent.plan', 'planned ' + (p.steps||[]).length + ' steps • ' +
-        (p.steps||[]).map(s=>s.tool).join(' → '));
+      bubble(p.reason || '', 'PLANNER', undefined, true);
+      trail('agent.plan', 'planned ' + (p.steps||[]).length + ' steps');
       break;
     case 'tool.call':
       {
-        const kind = toolKind(p.tool);
+        const s = stepNo(p), kind = toolKind(p.tool);
         if (p.tool === 'rag_search') {
           const q = (p.args && p.args.query) ? p.args.query : '';
-          trail('tool.call', 'rag_search: "'+q+'"', undefined, 'rag');
+          trail('tool.call', (s ? s + ' ' : '') + 'rag_search: "'+q+'"', undefined, 'rag');
           bubble('Looking up "'+q+'" in the knowledge base…', 'RAG SEARCH');
         } else {
-          trail('tool.call', p.tool + ' ' + JSON.stringify(p.args), undefined, kind);
+          trail('tool.call', (s ? s + ' ' : '') + toolLabel(p.tool) + ' ' + JSON.stringify(p.args), undefined, kind);
         }
       }
       break;
@@ -300,7 +302,7 @@ function handleEvent(ev, p) {
           'onclick="approve(this.dataset.action,\'deny\',this.parentNode.parentNode)">Deny</button>' +
           '</div>';
         $('queue').innerHTML = ''; $('queue').appendChild(card);
-        trail('approval.request', p.action_id + ' timeout ' + p.timeout_s + 's', undefined, toolKind(p.tool));
+        trail('approval.request', (stepNo(p) ? stepNo(p) + ' ' : '') + p.action_id + ' timeout ' + p.timeout_s + 's', undefined, toolKind(p.tool));
         bubble('This action is waiting for your approval.', 'APPROVAL REQUIRED');
       }
       break;
@@ -308,20 +310,21 @@ function handleEvent(ev, p) {
       if (p.tool === 'rag_search') {
         renderHits(p);
         const n = (p.output && p.output.hits ? p.output.hits.length : 0);
-        trail('tool.result', 'rag_search: ' + n + ' hit' + (n === 1 ? '' : 's'), 'good', 'rag');
+        trail('tool.result', (stepNo(p) ? stepNo(p) + ' ' : '') + 'rag_search: ' + n + ' hit' + (n === 1 ? '' : 's'), 'good', 'rag');
       } else {
         const kind = toolKind(p.tool);
+        const s = stepNo(p);
         if (p.decision === 'denied' || (p.ok === false && p.decision)) {
           $('queue').innerHTML = '<div class="empty">Action denied by user</div>';
-          toolBubble(p.tool, 'You denied this action — the step was skipped.', false);
+          toolBubble(p.tool, 'You denied this action — the step was skipped.', false, s);
         } else if (p.ok) {
           if (p.decision === 'allow') $('queue').innerHTML = '<div class="empty">Action completed</div>';
-          toolBubble(p.tool, toolDetail(p));
+          toolBubble(p.tool, toolDetail(p), undefined, s);
         } else {
-          toolBubble(p.tool, 'Failed: ' + (p.error || 'unknown error'), false);
+          toolBubble(p.tool, 'Failed: ' + (p.error || 'unknown error'), false, s);
         }
         trail(p.ok ? 'tool.result' : 'tool.result×',
-          (toolLabel(p.tool) + (p.ok ? '' : ' ✗ ' + (p.error || ''))).slice(0, 130),
+          ((s ? s + ' ' : '') + toolLabel(p.tool) + (p.ok ? '' : ' ✗ ' + (p.error || ''))).slice(0, 130),
           p.ok ? 'good' : 'bad', kind);
       }
       break;
