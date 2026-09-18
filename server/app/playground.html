@@ -34,6 +34,9 @@
   .msg.user{align-self:flex-end;background:var(--acc);color:var(--user-fg)}
   .msg.ai{align-self:flex-start;background:var(--card);border:1px solid var(--border)}
   .msg.ai .hint{display:block;font-size:11px;color:var(--mut);margin-bottom:4px;font-weight:600}
+  .toolchip{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;
+    color:var(--mut);margin-bottom:4px}
+  .toolchip .dot{margin:0}
   .msg.err{border-color:var(--err)}
   #composer{display:flex;gap:8px;padding-top:10px;border-top:1px solid var(--border)}
   #task{flex:1;padding:10px;background:var(--panel);border:1px solid var(--border);
@@ -185,6 +188,33 @@ function closeAction(card, decision, statusText, okCls) {
   card.classList.remove('pending');
   card.querySelectorAll('.approve button').forEach(b => b.disabled = true);
 }
+
+const TOOL_LABELS = {
+  rag_search: 'Knowledge search', calculator: 'Calculator', file_store: 'Workspace file',
+  web_search: 'Web search', time_now: 'Clock',
+  mcp_workspace_read: 'External workspace read', mcp_workspace_append: 'External workspace append'
+};
+function toolLabel(name) { return TOOL_LABELS[name] || name; }
+
+function toolBubble(name, detail, ok) {
+  const d = document.createElement('div');
+  d.className = 'msg ai' + (ok === false ? ' err' : '');
+  const chip = document.createElement('span'); chip.className = 'toolchip';
+  const dot = document.createElement('span'); dot.className = 'dot dot-' + toolKind(name);
+  const nm = document.createElement('span'); nm.textContent = toolLabel(name);
+  chip.appendChild(dot); chip.appendChild(nm); d.appendChild(chip);
+  const t = document.createElement('span'); t.textContent = detail; d.appendChild(t);
+  $('messages').appendChild(d);
+  scrollBottom();
+}
+function toolDetail(p) {
+  const out = p.output;
+  if (typeof out === 'string') return out.slice(0, 200);
+  if (out && p.tool === 'calculator' && typeof out.result === 'number')
+    return '= ' + (String(Math.round(out.result * 1000) / 1000));
+  if (out) return JSON.stringify(out).slice(0, 200);
+  return '';
+}
 function clearPanel(id, fallback) {
   const el = $(id);
   el.innerHTML = '';
@@ -243,7 +273,8 @@ function handleEvent(ev, p) {
     case 'agent.plan':
       bubble((p.reason||'') + '\nSteps: ' + (p.steps||[]).map(s=>s.tool).join(' → '),
         'PLANNER', undefined, true);
-      trail('agent.plan', (p.steps||[]).map(s=>s.tool+'('+JSON.stringify(s.args)+')').join(' • '));
+      trail('agent.plan', 'planned ' + (p.steps||[]).length + ' steps • ' +
+        (p.steps||[]).map(s=>s.tool).join(' → '));
       break;
     case 'tool.call':
       {
@@ -274,22 +305,25 @@ function handleEvent(ev, p) {
       }
       break;
     case 'tool.result':
-      if (p.tool === 'rag_search') renderHits(p);
-      if (p.decision === 'denied' || (p.ok === false && p.decision)) {
-        $('queue').innerHTML = '<div class="empty">Action denied by user</div>';
-        bubble('You denied this action — the step was skipped.', p.tool.toUpperCase());
-      } else if (p.decision === 'allow' && p.ok) {
-        $('queue').innerHTML = '<div class="empty">Action completed</div>';
+      if (p.tool === 'rag_search') {
+        renderHits(p);
+        const n = (p.output && p.output.hits ? p.output.hits.length : 0);
+        trail('tool.result', 'rag_search: ' + n + ' hit' + (n === 1 ? '' : 's'), 'good', 'rag');
+      } else {
+        const kind = toolKind(p.tool);
+        if (p.decision === 'denied' || (p.ok === false && p.decision)) {
+          $('queue').innerHTML = '<div class="empty">Action denied by user</div>';
+          toolBubble(p.tool, 'You denied this action — the step was skipped.', false);
+        } else if (p.ok) {
+          if (p.decision === 'allow') $('queue').innerHTML = '<div class="empty">Action completed</div>';
+          toolBubble(p.tool, toolDetail(p));
+        } else {
+          toolBubble(p.tool, 'Failed: ' + (p.error || 'unknown error'), false);
+        }
+        trail(p.ok ? 'tool.result' : 'tool.result×',
+          (toolLabel(p.tool) + (p.ok ? '' : ' ✗ ' + (p.error || ''))).slice(0, 130),
+          p.ok ? 'good' : 'bad', kind);
       }
-      if (p.ok && p.tool !== 'rag_search' && !p.decision) {
-        bubble('Done: ' + (p.output ? JSON.stringify(p.output).slice(0,140) : 'ok'), p.tool.toUpperCase());
-      } else if (!p.ok && !p.decision && p.error) {
-        bubble('Failed: ' + p.error, p.tool.toUpperCase(), 'err');
-      } else if (!p.ok && !p.decision) {
-        bubble('Failed: unknown error', p.tool.toUpperCase(), 'err');
-      }
-      trail(p.ok ? 'tool.result' : 'tool.result×', (p.tool + (p.ok ? '' : ' ✗ '+p.error)).slice(0,110),
-        p.ok ? 'good' : 'bad');
       break;
     case 'agent.done':
       bubble(p.summary || '', 'COMPLETED', undefined, true);
