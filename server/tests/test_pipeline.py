@@ -116,3 +116,15 @@ def test_healthz():
         resp = client.get("/healthz")
     assert resp.status_code == 200
     assert resp.json()["status"] == "ok"
+
+
+def test_playground_product_shell():
+    """The dual-pane product shell (chat left / business panels right)
+    is served and carries its interaction anchors."""
+    with TestClient(app) as client:
+        resp = client.get("/playground")
+    assert resp.status_code == 200
+    html = resp.text
+    assert "id=\"chat\"" in html and "id=\"composer\"" in html
+    assert "id=\"kb\"" in html and "id=\"queue\"" in html and "id=\"trail\"" in html
+    assert "data-step" in html  # approval buttons carry their action id

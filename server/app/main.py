@@ -3,6 +3,8 @@ import json
 import time
 from contextlib import asynccontextmanager
 
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -17,6 +19,8 @@ from .rag.retrieve import Retriever
 from .rag.store import VectorStore
 from .state import StateStore
 from .tools.registry import ToolContext, build_default_registry
+
+_PLAYGROUND_HTML = (Path(__file__).parent / "playground.html").read_text(encoding="utf-8")
 
 
 class JobRequest(BaseModel):
@@ -196,66 +200,6 @@ async def rag_ingest() -> dict:
     return {"chunks_added": added, "docs_ingested": len(app.state.vector_store.docs)}
 
 
-PLAYGROUND = """<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>Agent Workflow Demo - Playground</title>
-<style>
- body{font-family:ui-monospace,monospace;background:#0d1117;color:#e6edf3;margin:0;padding:24px}
- h1{font-size:18px} .row{display:flex;gap:8px;margin:12px 0}
- input[type=text]{flex:1;padding:10px;background:#161b22;border:1px solid #30363d;color:#e6edf3;border-radius:6px}
- button{padding:10px 18px;border:0;border-radius:6px;cursor:pointer;font-weight:600}
- .run{background:#238636;color:#fff} .appr{background:#9e6a03;color:#fff} .appr:disabled{opacity:.4}
- #log{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px;min-height:300px;overflow:auto}
- .ev{margin:6px 0;padding:8px 10px;border-left:3px solid #58a6ff;background:#0f141b;border-radius:2px;font-size:13px;white-space:pre-wrap;word-break:break-all}
- .ev.done{border-color:#238636}.ev.err{border-color:#f85149}.ev.appr{border-color:#9e6a03}
- .tag{color:#79c0ff;font-weight:600}
-</style>
-</head>
-<body>
-<h1>Agent Workflow Demo <span class="tag">LLM:</span> <span id="prov">-</span></h1>
-<div class="row">
-  <input type="text" id="task" placeholder='e.g. Calculate 3 items at 129.9 each plus 15% tax, then write a receipt file'>
-  <button class="run" onclick="runTask()">Run</button>
-  <button class="appr" id="appr" disabled onclick="approve('allow')">Approve</button>
-  <button class="appr" id="deny" disabled onclick="approve('deny')">Deny</button>
-</div>
-<div id="log"></div>
-<script>
-let sessionId = null, actionId = null;
-const log = document.getElementById('log');
-function add(html, cls){ const d = document.createElement('div'); d.className='ev '+(cls||''); d.innerHTML=html; log.appendChild(d); log.scrollTop = log.scrollHeight; }
-async function runTask(){
-  const task = document.getElementById('task').value.trim(); if(!task) return;
-  document.getElementById('log').innerHTML='';
-  const res = await fetch('/v1/agents/workflow/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task})});
-  const reader = res.body.getReader(); const dec = new TextDecoder(); let buf='';
-  while(true){
-    const {done,value} = await reader.read(); if(done) break;
-    buf += dec.decode(value,{stream:true});
-    let idx; while((idx = buf.indexOf('\\n\\n')) >= 0){
-      const block = buf.slice(0,idx).split('\\n'); buf = buf.slice(idx+2);
-      const ev = block.find(l=>l.startsWith('event:'))?.slice(7); const data = block.find(l=>l.startsWith('data:'))?.slice(6);
-      if(!ev||!data) continue;
-      let p; try{ p = JSON.parse(data); }catch{ continue; }
-      if(ev==='agent.start'){ sessionId=p.session_id; document.getElementById('prov').textContent=p.llm_provider; }
-      if(ev==='approval.request'){ actionId=p.action_id; document.getElementById('appr').disabled=false; document.getElementById('deny').disabled=false; }
-      const cls = ev.includes('done')?'done':(ev.includes('error')?'err':(ev==='approval.request'?'appr':''));
-      add('<span class="tag">'+ev+'</span> '+data, cls);
-    }
-  }
-}
-async function approve(decision){
-  if(!actionId||!sessionId) return;
-  await fetch('/v1/agents/'+sessionId+'/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action_id:actionId,decision})});
-  document.getElementById('appr').disabled=true; document.getElementById('deny').disabled=true; actionId=null;
-}
-</script>
-</body></html>
-"""
-
-
 @app.get("/playground", response_class=HTMLResponse)
 async def playground() -> str:
-    return PLAYGROUND
+    return _PLAYGROUND_HTML

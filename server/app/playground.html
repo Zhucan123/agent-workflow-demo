@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Workbench</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --card:#0f141b; --border:#30363d;
+    --fg:#e6edf3; --mut:#8b949e; --acc:#58a6ff; --ok:#238636; --warn:#9e6a03;
+    --err:#f85149;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px}
+  header{display:flex;align-items:center;gap:12px;padding:10px 18px;
+    border-bottom:1px solid var(--border);background:var(--panel)}
+  header h1{font-size:15px;margin:0;font-weight:600}
+  .pill{font-size:11px;padding:2px 8px;border-radius:10px;border:1px solid var(--border);
+    background:var(--card);color:var(--mut)}
+  .pill.green{color:#3fb950;border-color:var(--ok)}
+  main{display:grid;grid-template-columns:minmax(0,1fr) 340px;height:calc(100vh - 45px)}
+  section{padding:12px;overflow:auto}
+  #chat{display:flex;flex-direction:column;border-right:1px solid var(--border)}
+  #messages{flex:1;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px}
+  .msg{max-width:88%;padding:9px 12px;border-radius:10px;line-height:1.5;
+    white-space:pre-wrap;word-break:break-word;font-size:12.5px}
+  .msg.user{align-self:flex-end;background:var(--acc);color:#0d1117}
+  .msg.ai{align-self:flex-start;background:var(--card);border:1px solid var(--border)}
+  .msg.ai .hint{display:block;font-size:11px;color:var(--mut);margin-bottom:4px;font-weight:600}
+  .msg.err{border-color:var(--err)}
+  #composer{display:flex;gap:8px;padding-top:10px;border-top:1px solid var(--border)}
+  #task{flex:1;padding:10px;background:var(--panel);border:1px solid var(--border);
+    border-radius:8px;color:var(--fg);font:inherit}
+  .btn{padding:10px 18px;border:0;border-radius:8px;font:inherit;font-weight:700;cursor:pointer}
+  .btn.run{background:var(--ok);color:#fff}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  h2{font-size:11.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.8px;
+    margin:0 0 8px;display:flex;align-items:center;gap:6px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:8px;
+    padding:8px 10px;margin-bottom:8px;font-size:12px}
+  .card .tag{display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:8px;
+    background:var(--panel);border:1px solid var(--border);margin-right:6px;color:var(--acc)}
+  .card .src{color:var(--mut);font-size:10.5px}
+  .score{float:right;color:#3fb950;font-size:11px}
+  .hit p{margin:5px 0 0;color:var(--fg);line-height:1.45}
+  .approve{display:flex;gap:6px;margin-top:8px}
+  .approve .btn{padding:5px 12px;font-size:11.5px}
+  .btn.allow{background:var(--ok);color:#fff}
+  .btn.deny{background:var(--err);color:#fff}
+  .state{float:right;font-size:11px;font-weight:700}
+  .state.ok{color:#3fb950}.state.no{color:var(--err)}
+  .tl{background:var(--card);border:1px solid var(--border);border-radius:8px;
+    padding:8px 10px;margin-bottom:6px;font-size:11.5px}
+  .tl .ev{color:var(--acc);font-weight:700}
+  .tl .arg{color:var(--mut)}
+  .tl.bad{border-color:var(--err)} .tl.good{border-color:var(--ok)}
+  .empty{color:var(--mut);font-size:11.5px;border:1px dashed var(--border);
+    border-radius:8px;padding:10px;text-align:center}
+  ::-webkit-scrollbar{width:8px} ::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Agent Workbench</h1>
+  <span class="pill" id="prov">llm: -</span>
+  <span class="pill" id="model">model: -</span>
+  <span class="pill" id="sess">-</span>
+</header>
+<main>
+  <section id="chat">
+    <div id="messages">
+      <div class="msg ai"><span class="hint">AI PAYROLL &amp; POLICY COPILOT</span>
+        Ask me to look something up in the knowledge base, run a calculation,
+        or write a file. Risky actions wait for your approval on the right.</div>
+    </div>
+    <div id="composer">
+      <input id="task" type="text" placeholder='e.g. Read notes.txt from the MCP external workspace, then append "computed total = 448.155" to it'>
+      <button class="btn run" id="go" onclick="runTask()">Run</button>
+    </div>
+  </section>
+  <section id="side">
+    <h2>Knowledge hits</h2>
+    <div id="kb"><div class="empty">Doc search results appear here</div></div>
+    <h2 style="margin-top:14px">Approval queue</h2>
+    <div id="queue"><div class="empty">No pending actions</div></div>
+    <h2 style="margin-top:14px">Execution trail</h2>
+    <div id="trail"><div class="empty">Run a task to see the trail</div></div>
+  </section>
+</main>
+<script>
+let sessionId = null;
+const $ = id => document.getElementById(id);
+
+function bubble(text, hint, cls) {
+  const d = document.createElement('div');
+  d.className = 'msg ai' + (cls?' '+cls:'');
+  if (hint) { const h = document.createElement('span'); h.className='hint'; h.textContent=hint; d.appendChild(h); }
+  const t = document.createElement('span'); t.textContent = text; d.appendChild(t);
+  $('messages').appendChild(d);
+  $('messages').scrollTop = $('messages').scrollHeight;
+}
+function trail(ev, text, cls) {
+  const d = document.createElement('div');
+  d.className = 'tl' + (cls?' '+cls:'');
+  d.innerHTML = '<span class="ev">'+ev+'</span> ' + text;
+  $('trail').appendChild(d);
+  $('trail').scrollTop = $('trail').scrollHeight;
+}
+function renderHits(payload) {
+  const out = payload && payload.output && payload.output.hits;
+  if (!out || !out.length) { $('kb').innerHTML = '<div class="empty">No matches</div>'; return; }
+  $('kb').innerHTML = '';
+  for (const h of out) {
+    const c = document.createElement('div'); c.className = 'card';
+    c.innerHTML = '<span class="tag">'+(h.source||'doc')+'</span>' +
+      '<span class="score">'+Math.round((h.score||0)*100)+'%</span>' +
+      '<p>'+(h.text||'').slice(0,160)+'</p>';
+    $('kb').appendChild(c);
+  }
+}
+function closeAction(card, decision, statusText, okCls) {
+  card.querySelector('.state').textContent = statusText;
+  card.querySelector('.state').className = 'state ' + okCls;
+  card.querySelectorAll('.approve button').forEach(b => b.disabled = true);
+}
+function clearPanel(id, fallback) {
+  const el = $(id);
+  el.innerHTML = '';
+  const empty = document.createElement('div'); empty.className='empty'; empty.textContent = fallback;
+  el.appendChild(empty);
+}
+function approve(actionId, decision, card) {
+  if (!sessionId || !actionId) return;
+  fetch('/v1/agents/'+sessionId+'/approve',
+    {method:'POST', headers:{'Content-Type':'application/json'},
+     body: JSON.stringify({action_id:actionId, decision})})
+    .then(res => res.json())
+    .then(() => closeAction(card, decision,
+      decision==='allow' ? 'approved' : 'denied',
+      decision==='allow' ? 'ok' : 'no'));
+}
+
+async function runTask() {
+  const task = $('task').value.trim();
+  if (!task) return;
+  sessionId = null;
+  $('sess').textContent = '-';
+  $('messages').innerHTML = '';
+  clearPanel('kb', 'Searching docs…'); clearPanel('queue', 'No pending actions');
+  clearPanel('trail', 'Running…');
+  const u = document.createElement('div'); u.className='msg user'; u.textContent = task;
+  $('messages').appendChild(u);
+
+  const res = await fetch('/v1/agents/workflow/run',
+    {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({task})});
+  const reader = res.body.getReader();
+  const dec = new TextDecoder(); let buf = '';
+  while (true) {
+    const {done, value} = await reader.read(); if (done) break;
+    buf += dec.decode(value, {stream:true});
+    let idx;
+    while ((idx = buf.indexOf('\n\n')) >= 0) {
+      const block = buf.slice(0, idx); buf = buf.slice(idx+2);
+      const ev = (block.split('\n').find(l=>l.startsWith('event:'))||'').slice(7);
+      const data = (block.split('\n').find(l=>l.startsWith('data:'))||'').slice(6);
+      if (!ev || !data) continue;
+      let p; try { p = JSON.parse(data); } catch { continue; }
+      handleEvent(ev, p);
+    }
+  }
+}
+
+function handleEvent(ev, p) {
+  switch (ev) {
+    case 'agent.start':
+      sessionId = p.session_id;
+      $('prov').textContent = 'llm: ' + p.llm_provider;
+      $('model').textContent = 'model: ' + p.model;
+      $('sess').textContent = p.session_id.slice(0, 18);
+      break;
+    case 'agent.plan':
+      bubble((p.reason||'') + '\nSteps: ' + (p.steps||[]).map(s=>s.tool).join(' → '),
+        'PLANNER', undefined);
+      trail('agent.plan', (p.steps||[]).map(s=>s.tool+'('+JSON.stringify(s.args)+')').join(' • '));
+      break;
+    case 'tool.call':
+      if (p.tool === 'rag_search') trail('tool.call', 'rag_search looking up docs…');
+      else if (p.tool === 'calculator') trail('tool.call', 'calculator '+JSON.stringify(p.args));
+      else if (p.tool === 'file_store' || p.tool.startsWith('mcp_')) {
+        const card = document.createElement('div'); card.className = 'card';
+        card.innerHTML = '<span class="tag">'+p.tool+'</span><span class="state">awaiting approval</span>' +
+          '<p>'+JSON.stringify(p.args).slice(0,120)+'</p>' +
+          '<div class="approve">' +
+          '<button class="btn allow" data-step="'+p.step_id+'" ' +
+          'onclick="approve(\'act_\'+this.dataset.step,\'allow\',this.parentNode.parentNode)">Approve</button>' +
+          '<button class="btn deny" data-step="'+p.step_id+'" ' +
+          'onclick="approve(\'act_\'+this.dataset.step,\'deny\',this.parentNode.parentNode)">Deny</button>' +
+          '</div>';
+        $('queue').innerHTML = ''; $('queue').appendChild(card);
+        trail(p.tool, 'awaiting approval: '+JSON.stringify(p.args).slice(0,80));
+        bubble('This action is waiting for your approval.', 'APPROVAL REQUIRED');
+      } else trail('tool.call', p.tool + ' ' + JSON.stringify(p.args));
+      break;
+    case 'approval.request':
+      trail('approval.request', p.action_id + ' timeout ' + p.timeout_s + 's');
+      break;
+    case 'tool.result':
+      if (p.tool === 'rag_search') renderHits(p);
+      else if (p.tool === 'file_store' || p.tool.startsWith('mcp_')) {
+        if (p.decision === 'denied' || (p.ok === false && p.decision)) {
+          $('queue').innerHTML = '<div class="empty">Action denied by user</div>';
+        } else if (p.ok) {
+          $('queue').innerHTML = '<div class="empty">Action completed</div>';
+          bubble('Done: ' + (p.output ? JSON.stringify(p.output).slice(0,140) : 'ok'), p.tool.toUpperCase());
+        } else {
+          bubble('Failed: ' + (p.error || 'unknown error'), p.tool.toUpperCase(), 'err');
+        }
+      }
+      trail(p.ok ? 'tool.result' : 'tool.result×', (p.tool + (p.ok ? '' : ' ✗ '+p.error)).slice(0,110),
+        p.ok ? 'good' : 'bad');
+      break;
+    case 'agent.done':
+      bubble(p.summary || '', 'COMPLETED');
+      trail('agent.done', 'stats ok=' + p.tool_stats.ok + '/' + p.tool_stats.total +
+        ' denied=' + p.tool_stats.denied + ' ' + p.duration_ms + 'ms', 'good');
+      break;
+    case 'agent.error':
+      bubble(p.message || 'Agent error', 'ERROR', 'err');
+      trail('agent.error', (p.message||'').slice(0,120), 'bad');
+      break;
+  }
+}
+$('task').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) runTask(); });
+</script>
+</body>
+</html>
