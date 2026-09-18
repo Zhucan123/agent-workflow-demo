@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+server/data/db/
+server/data/sandbox/*
+!server/data/sandbox/.gitkeep
+uv.lock.old
+target/
+*.log
+.env
+.DS_Store
