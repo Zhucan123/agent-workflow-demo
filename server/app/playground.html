@@ -45,10 +45,16 @@
     margin:0 0 8px;display:flex;align-items:center;gap:6px}
   .card{background:var(--card);border:1px solid var(--border);border-radius:8px;
     padding:8px 10px;margin-bottom:8px;font-size:12px}
+  .card.hit{border-left:3px solid var(--acc)}
+  .card.approval{border-left:3px solid var(--warn)}
+  .card.approval.pending{box-shadow:0 0 0 1px var(--warn)}
   .card .tag{display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:8px;
     background:var(--panel);border:1px solid var(--border);margin-right:6px;color:var(--acc)}
   .card .src{color:var(--mut);font-size:10.5px}
-  .score{float:right;color:var(--ok);font-size:11px}
+  .score{float:right;color:var(--ok);font-size:11px;font-weight:700}
+  .bar{display:inline-block;width:52px;height:6px;background:var(--panel);
+    border:1px solid var(--border);border-radius:4px;vertical-align:middle;margin-left:8px;overflow:hidden}
+  .bar .fill{display:block;height:100%;background:var(--ok)}
   .hit p{margin:5px 0 0;color:var(--fg);line-height:1.45}
   .approve{display:flex;gap:6px;margin-top:8px}
   .approve .btn{padding:5px 12px;font-size:11.5px}
@@ -56,11 +62,15 @@
   .btn.deny{background:var(--err);color:#fff}
   .state{float:right;font-size:11px;font-weight:700}
   .state.ok{color:var(--ok)}.state.no{color:var(--err)}
-  .tl{background:var(--card);border:1px solid var(--border);border-radius:8px;
-    padding:8px 10px;margin-bottom:6px;font-size:11.5px}
-  .tl .ev{color:var(--acc);font-weight:700}
-  .tl .arg{color:var(--mut)}
+  .tl{display:flex;align-items:baseline;gap:6px;background:var(--card);
+    border:1px solid var(--border);border-radius:8px;
+    padding:7px 10px;margin-bottom:6px;font-size:11.5px}
+  .tl .ev{color:var(--fg);font-weight:700}
+  .tl .arg{color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .tl.bad{border-color:var(--err)} .tl.good{border-color:var(--ok)}
+  .dot{flex:none;width:7px;height:7px;border-radius:50%;margin-top:2px;margin-right:2px}
+  .dot-rag{background:var(--acc)} .dot-calc{background:var(--ok)}
+  .dot-mcp{background:#a371f7} .dot-file{background:var(--warn)} .dot-other{background:var(--mut)}
   .empty{color:var(--mut);font-size:11.5px;border:1px dashed var(--border);
     border-radius:8px;padding:10px;text-align:center}
   .cursor{animation:blink .8s step-start infinite;color:var(--acc)}
@@ -140,21 +150,31 @@ function bubble(text, hint, cls, typing) {
     }
   }, 16);
 }
-function trail(ev, text, cls) {
+function trail(ev, text, cls, kind) {
   const d = document.createElement('div');
   d.className = 'tl' + (cls?' '+cls:'');
-  d.innerHTML = '<span class="ev">'+ev+'</span> ' + text;
+  d.innerHTML = '<span class="dot dot-'+(kind||'other')+'"></span>' +
+    '<span class="ev">'+ev+'</span> <span class="arg">'+text+'</span>';
   $('trail').appendChild(d);
   $('trail').scrollTop = $('trail').scrollHeight;
+}
+function toolKind(name) {
+  if (name === 'rag_search') return 'rag';
+  if (name === 'calculator') return 'calc';
+  if (name.startsWith('mcp_')) return 'mcp';
+  if (name === 'file_store') return 'file';
+  return 'other';
 }
 function renderHits(payload) {
   const out = payload && payload.output && payload.output.hits;
   if (!out || !out.length) { $('kb').innerHTML = '<div class="empty">No matches</div>'; return; }
   $('kb').innerHTML = '';
   for (const h of out) {
-    const c = document.createElement('div'); c.className = 'card';
+    const pct = Math.round((h.score||0)*100);
+    const c = document.createElement('div'); c.className = 'card hit';
     c.innerHTML = '<span class="tag">'+(h.source||'doc')+'</span>' +
-      '<span class="score">'+Math.round((h.score||0)*100)+'%</span>' +
+      '<span class="score">'+pct+'%</span>' +
+      '<span class="bar"><span class="fill" style="width:'+Math.min(pct,100)+'%"></span></span>' +
       '<p>'+(h.text||'').slice(0,160)+'</p>';
     $('kb').appendChild(c);
   }
@@ -162,6 +182,7 @@ function renderHits(payload) {
 function closeAction(card, decision, statusText, okCls) {
   card.querySelector('.state').textContent = statusText;
   card.querySelector('.state').className = 'state ' + okCls;
+  card.classList.remove('pending');
   card.querySelectorAll('.approve button').forEach(b => b.disabled = true);
 }
 function clearPanel(id, fallback) {
@@ -225,13 +246,20 @@ function handleEvent(ev, p) {
       trail('agent.plan', (p.steps||[]).map(s=>s.tool+'('+JSON.stringify(s.args)+')').join(' • '));
       break;
     case 'tool.call':
-      if (p.tool === 'rag_search') trail('tool.call', 'rag_search looking up docs…');
-      else if (p.tool === 'calculator') trail('tool.call', 'calculator '+JSON.stringify(p.args));
-      else trail('tool.call', p.tool + ' ' + JSON.stringify(p.args));
+      {
+        const kind = toolKind(p.tool);
+        if (p.tool === 'rag_search') {
+          const q = (p.args && p.args.query) ? p.args.query : '';
+          trail('tool.call', 'rag_search: "'+q+'"', undefined, 'rag');
+          bubble('Looking up "'+q+'" in the knowledge base…', 'RAG SEARCH');
+        } else {
+          trail('tool.call', p.tool + ' ' + JSON.stringify(p.args), undefined, kind);
+        }
+      }
       break;
     case 'approval.request':
       {
-        const card = document.createElement('div'); card.className = 'card';
+        const card = document.createElement('div'); card.className = 'card approval pending';
         card.innerHTML = '<span class="tag">'+p.tool+'</span><span class="state">awaiting approval</span>' +
           '<p>'+(p.summary||'').slice(0,150)+'</p>' +
           '<div class="approve">' +
@@ -241,7 +269,7 @@ function handleEvent(ev, p) {
           'onclick="approve(this.dataset.action,\'deny\',this.parentNode.parentNode)">Deny</button>' +
           '</div>';
         $('queue').innerHTML = ''; $('queue').appendChild(card);
-        trail('approval.request', p.action_id + ' timeout ' + p.timeout_s + 's');
+        trail('approval.request', p.action_id + ' timeout ' + p.timeout_s + 's', undefined, toolKind(p.tool));
         bubble('This action is waiting for your approval.', 'APPROVAL REQUIRED');
       }
       break;
