@@ -1,62 +1,71 @@
-# Demo script(30-40 秒沉默录屏)
+# Demo script(40-50 秒沉默录屏)
 
-> 无需语音。按镜头顺序录,每条给出"画面 → 终端命令"。字体调大、深色背景。
-> 录前:`export OPENAI_BASE_URL=...; export OPENAI_API_KEY=...`(别录进画面)
+> 无需语音,按镜头顺序操作,画面 → 动作。字体调大、深色主题。
+> 推荐走 **playground 页面**操作(视觉效果好);需要终端流时看文末备选方案。
+> 模型:真实 LLM(DeepSeek)。录前确认服务已以真实模式启动(MCP 已开启、notes.txt 已还原)。
 
-## 镜头 1(5s)启动
+## 准备(录前一次,别录进画面)
+
 ```bash
-cd server
-uv run uvicorn app.main:app --port 8000
-curl -s http://localhost:8000/healthz   # → {"status":"ok"}
+cd /home/ubuntu/freelancer/agent-workflow-demo/server
+# 还原 MCP 演示文件(保证 read 输出干净)
+printf 'meeting notes:\n- refund window is 14 days\n' > data/sandbox/notes.txt
+# 服务启动参数(真实 LLM + MCP demo 模式):
+#   env AGENT_LLM_MODE=openai OPENAI_BASE_URL=... OPENAI_API_KEY=... \
+#       AGENT_MODEL=deepseek-flash AGENT_MCP_MODE=demo \
+#       .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+# 确认 http://127.0.0.1:8000/healthz 返回 {"status":"ok","llm_provider":"openai"}
 ```
 
-## 镜头 2(5s)发任务
+## 镜头 1(0-6s)打开页面
+- 浏览器打开 `http://127.0.0.1:8000/playground`,两次"Run"字样隐约可见
+- 停顿 2 秒,让观众看清页面标题栏("LLM: openai")
+
+## 镜头 2(6-14s)输入任务
+- 粘贴任务文本到输入框,放慢、不要瞬间粘贴完成:
+  `Use the MCP external workspace to read notes.txt, then append the line "computed total = 448.155" to it`
+- 光标停在按钮上,停 2 秒,再点 **Run**
+
+## 镜头 3(14-26s)事件流滚动
+- `agent.start` / `agent.plan`(LLM 的理由文本逐行出现,画面最丰满的一段)
+- `tool.call` → `mcp_workspace_read` → `tool.result`(能看到 notes.txt 内容)
+- 不要移动鼠标,让画面自然滚动
+
+## 镜头 4(26-34s)HITL 审批门(核心镜头)
+- `approval.request` 出现,**Approve 按钮亮起后故意等 3-5 秒再点**
+- 点击 Approve → `tool.result ok=true`
+
+## 镜头 5(34-40s)结果落盘
+- 切到终端,慢慢敲:
 ```bash
-curl -N -X POST http://localhost:8000/v1/agents/workflow/run \
-  -H 'Content-Type: application/json' \
-  -d '{"task": "Calculate 3 items at 129.9 each plus 15% tax, then write a receipt file named receipt-2026.txt"}'
+cat data/sandbox/notes.txt
 ```
+- 展示追加成功的两行内容,停 2 秒
 
-## 镜头 3(10s)事件流
-让终端滚动展示:
+## 镜头 6(40-48s)审计回放(收尾)
+- 从 playground 事件里找到 session_id(agent.start 里),敲:
+```bash
+curl -s http://127.0.0.1:8000/v1/agents/<session_id>/events | python3 -m json.tool
 ```
-event: agent.plan    steps=[calculator, file_store(write)]
-event: tool.call     calculator args={"expression": "3*129.9*1.15"}
-event: tool.result   ok=true output=448.255
-event: approval.request  summary="Write receipt-2026.txt to sandbox"  ← 在这里停 2 秒
-```
+- 画面定格在完整时间线,淡出
 
-## 镜头 4(10s)HITL 审批 + 续跑
-第二个终端:
+## 备选:纯终端流(不拍页面)
+用 `curl -N` 跑同一任务,事件在终端滚动;审批改第二个终端发 approve 请求:
 ```bash
 curl -X POST http://localhost:8000/v1/agents/<session_id>/approve \
   -H 'Content-Type: application/json' \
-  -d '{"action_id": "<上一条事件里的 action_id>", "decision": "allow"}'
-```
-回到第一个终端:继续滚动 tool.result / token.usage / agent.done,打开生成的
-`server/data/sandbox/receipt-2026.txt` 展示内容。
-
-## 镜头 5(5s)Java 集成(可选加分项)
-```bash
-cd integration/java-client
-mvn -q spring-boot:run -Dspring-boot.run.arguments="Calculate 2 items at 59.9 each"
-```
-展示同样的事件流从 Java 客户端里打出来。
-
-## 镜头 6(5s)RAG(可选)
-```bash
-uv run python ../scripts/seed.py
-curl -s 'http://localhost:8000/v1/rag/search?q=refund+policy&k=3'
+  -d '{"action_id": "<approval.request 里的 action_id>", "decision": "allow"}'
 ```
 
 ## 录制要点
-- 终端背景深色,字号 16pt+,行高拉开
-- 每个镜头之间留 0.5s 黑屏或静止,方便剪辑
-- 不配音;剪映加 3-4 行英文字幕(可选)
-- 输出 1080p MP4,上传 YouTube(unlisted)→ 链接挂 Upwork portfolio / README
+- 关键节奏:**审批门等待 3-5 秒**是本片叙事点,别剪掉
+- 每段之间留 0.5s 静止,方便剪辑
+- 不配音,剪映加 3-4 行英文小字说明(plan/approval/audit)
+- 1080p MP4,YouTube unlisted → 链接挂 Upwork portfolio / README
 
 ## 录制前自查清单
-- [ ] 服务在 stub 模式下也能跑(无 key 观众可复现)
-- [ ] API key 不出现在画面
-- [ ] 沙箱目录干净(删掉演示产物)
-- [ ] /healthz 返回 200(镜头 1 有东西可拍)
+- [ ] notes.txt 已还原(只含面板两行,无历史测试残留)
+- [ ] 服务是真实 LLM 模式(`healthz` 显示 `llm_provider: openai`)且 `AGENT_MCP_MODE=demo`
+- [ ] API key 不出现在任何画面(启动命令提前敲好)
+- [ ] playground 能打开(`/playground` 200)
+- [ ] 录完记得停服务/隧道,不留裸奔进程
