@@ -20,7 +20,7 @@ from .rag.store import VectorStore
 from .state import StateStore
 from .tools.registry import ToolContext, build_default_registry
 
-_PLAYGROUND_HTML = (Path(__file__).parent / "playground.html").read_text(encoding="utf-8")
+_PLAYGROUND_HTML_PATH = Path(__file__).parent / "playground.html"
 
 
 class JobRequest(BaseModel):
@@ -206,5 +206,8 @@ async def rag_ingest() -> dict:
 
 
 @app.get("/playground", response_class=HTMLResponse)
-async def playground() -> str:
-    return _PLAYGROUND_HTML
+async def playground() -> HTMLResponse:
+    return HTMLResponse(
+        _PLAYGROUND_HTML_PATH.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-store"},
+    )

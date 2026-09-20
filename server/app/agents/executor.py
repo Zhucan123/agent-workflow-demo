@@ -75,7 +75,9 @@ class Executor:
     ) -> list[StepOutcome]:
         outcomes: list[StepOutcome] = []
         outcome_by_id: dict[str, StepOutcome] = {}
-        for step in plan.steps:
+        for index, step in enumerate(plan.steps):
+            if index:
+                await asyncio.sleep(config.STEP_DELAY_S)
             started = asyncio.get_event_loop().time()
             args = _render_args(step.args, outcome_by_id)
             await emit("tool.call", {"step_id": step.id, "tool": step.tool, "args": args})

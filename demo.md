@@ -1,6 +1,6 @@
 # Demo script(40-50 秒沉默录屏)
 
-> 无需语音,按镜头顺序操作,画面 → 动作。字体调大、深色主题。
+> 无需语音,按镜头顺序操作,画面 → 动作。字体调大、**浅色主题**。
 > 主画面:**Agent Workbench 双栏产品壳**(左对话区 / 右业务面板)。
 > 模型:真实 LLM(DeepSeek)。录前确认服务已以真实模式启动(MCP 已开启、notes.txt 已还原)。
 
@@ -21,34 +21,36 @@ printf 'meeting notes:\n- refund window is 14 days\n' > data/sandbox/notes.txt
 # 确认 http://127.0.0.1:8000/healthz 返回 {"status":"ok","llm_provider":"openai"}
 ```
 
-## 镜头 1(0-6s)打开产品壳
+## 镜头 1(0-5s)before 状态实锤(新增)
+- 终端执行 `cat data/sandbox/notes.txt`,展示初始内容(两行,无追加)
+- 停顿 1-2 秒,作为"app 执行前的文件状态"参照
+
+## 镜头 2(5-11s)打开产品壳
 - 浏览器打开 `http://127.0.0.1:8000/playground`(Agent Workbench)
 - 停顿 2 秒:观众看到左对话栏、右侧"Knowledge hits / Approval queue / Execution trail"三个空面板
 - 标题栏显示 `llm: openai`
 
-## 镜头 2(6-14s)输入任务
+## 镜头 3(11-19s)输入任务
 - 放慢粘贴:
   `Look up the refund window in the knowledge base, then read notes.txt from the MCP external workspace and append "refund window = 14 days" to it`
 - 停顿 2 秒再点 **Run**
 
-## 镜头 3(14-26s)左对话 + 右知识库,自动点亮
+## 镜头 4(19-31s)左对话 + 右知识库,自动点亮
 - 左侧:PLANNER 气泡(理由+步骤)、AI 气泡滚动
 - 右侧:**Knowledge hits 卡片逐个弹出**(来源 refund-policy.md、命中百分比、片段预览)——画面最丰满的一段
 - 轨迹栏同时滚动 tool.call/tool.result
 
-## 镜头 4(26-34s)HITL 审批门(核心镜头)
+## 镜头 5(31-39s)HITL 审批门(核心镜头)
 - `mcp_workspace_append` 卡片出现在 **Approval queue**,状态 "awaiting approval"
 - **故意等 3-5 秒**(让观众读懂"需要人决策")再点 **Approve**
 - 卡片状态变绿 "approved",队列区换 "Action completed"
 
-## 镜头 5(34-40s)结果落盘
-- 切到终端,慢慢敲:
-```bash
-cat data/sandbox/notes.txt
-```
-- 展示追加成功,停 2 秒
+## 镜头 6(39-45s)after 状态实锤
+- 切回同一终端,敲 `cat data/sandbox/notes.txt`:
+- 内容比镜头 1 **多出一行** `refund window = 14 days`——与浏览器里 #2 读取时展示的文件呼应
+- 停顿 2 秒,让观众自然对比 before/after 差异
 
-## 镜头 6(40-48s)审计回放(收尾)
+## 镜头 7(45-53s)审计回放(收尾)
 - 浏览器开 `http://127.0.0.1:8000/v1/agents/<session_id>/events`(session_id 在页面标题栏)
 - 画面定格在完整时间线,淡出
 

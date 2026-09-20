@@ -9,12 +9,12 @@
   :root{
     --bg:#f6f8fa; --panel:#ffffff; --card:#ffffff; --border:#d0d7de;
     --fg:#1f2328; --mut:#57606a; --acc:#0969da; --ok:#1a7f37; --warn:#9a6700;
-    --err:#cf222e; --user-fg:#ffffff;
+    --err:#cf222e; --user-fg:#ffffff; --busy-fg:#ffffff;
   }
   :root[data-theme="dark"]{
     --bg:#0d1117; --panel:#161b22; --card:#0f141b; --border:#30363d;
     --fg:#e6edf3; --mut:#8b949e; --acc:#58a6ff; --ok:#238636; --warn:#9e6a03;
-    --err:#f85149; --user-fg:#0d1117;
+    --err:#f85149; --user-fg:#0d1117; --busy-fg:#0d1117;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--fg);
@@ -32,17 +32,26 @@
   .msg{max-width:88%;padding:9px 12px;border-radius:10px;line-height:1.5;
     white-space:pre-wrap;word-break:break-word;font-size:12.5px}
   .msg.user{align-self:flex-end;background:var(--acc);color:var(--user-fg)}
-  .msg.ai{align-self:flex-start;background:var(--card);border:1px solid var(--border)}
-  .msg.ai .hint{display:block;font-size:11px;color:var(--mut);margin-bottom:4px;font-weight:600}
+  .msg.ai{align-self:flex-start;background:var(--card);border:1px solid var(--border);border-left:3px solid var(--acc)}
+  .msg.ai .hint{display:block;font-size:11px;color:var(--acc);margin-bottom:4px;font-weight:600}
   .toolchip{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;
     color:var(--mut);margin-bottom:4px}
   .toolchip .dot{margin:0}
+  .msg.tool{background:color-mix(in srgb, var(--tint) 8%, var(--card));
+    border:1px solid color-mix(in srgb, var(--tint) 32%, var(--border))}
+  .msg.tool-rag{--tint:var(--acc)} .msg.tool-calc{--tint:var(--ok)}
+  .msg.tool-mcp{--tint:#a371f7} .msg.tool-file{--tint:var(--warn)} .msg.tool-other{--tint:var(--mut)}
+  .msg.tool .toolchip{color:var(--tint)}
   .msg.err{border-color:var(--err)}
   #composer{display:flex;gap:8px;padding-top:10px;border-top:1px solid var(--border)}
   #task{flex:1;padding:10px;background:var(--panel);border:1px solid var(--border);
     border-radius:8px;color:var(--fg);font:inherit}
   .btn{padding:10px 18px;border:0;border-radius:8px;font:inherit;font-weight:700;cursor:pointer}
   .btn.run{background:var(--ok);color:#fff}
+  .btn.run.busy{background:var(--acc);color:var(--busy-fg);pointer-events:none;opacity:1;padding-left:36px;position:relative}
+  .btn.run.busy::before{content:'';position:absolute;left:12px;top:50%;width:12px;height:12px;margin-top:-6px;
+    border:2px solid color-mix(in srgb, var(--busy-fg) 35%, transparent);border-top-color:var(--busy-fg);border-radius:50%;animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
   .btn:disabled{opacity:.4;cursor:not-allowed}
   h2{font-size:11.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.8px;
     margin:0 0 8px;display:flex;align-items:center;gap:6px}
@@ -134,7 +143,7 @@ fetch('/healthz').then(r => r.json()).then(h => {
   $('model').textContent = 'model: ' + (h.model || '-');
 });
 
-function bubble(text, hint, cls, typing) {
+function bubble(text, hint, cls, typing, onDone) {
   const d = document.createElement('div');
   d.className = 'msg ai' + (cls?' '+cls:'');
   if (hint) { const h = document.createElement('span'); h.className='hint'; h.textContent=hint; d.appendChild(h); }
@@ -145,11 +154,13 @@ function bubble(text, hint, cls, typing) {
   d.appendChild(cursor);
   let i = 0;
   d._timer = setInterval(() => {
+    if (!d.isConnected) { clearInterval(d._timer); d._timer = null; return; }
     t.textContent = text.slice(0, i++);
     scrollBottom();
     if (i > text.length) {
       clearInterval(d._timer); d._timer = null;
       if (cursor.parentNode) cursor.remove();
+      if (onDone) onDone();
     }
   }, 16);
 }
@@ -202,7 +213,7 @@ function toolLabel(name) { return TOOL_LABELS[name] || name; }
 
 function toolBubble(name, detail, ok, tag) {
   const d = document.createElement('div');
-  d.className = 'msg ai' + (ok === false ? ' err' : '');
+  d.className = 'msg ai tool tool-' + toolKind(name) + (ok === false ? ' err' : '');
   const chip = document.createElement('span'); chip.className = 'toolchip';
   const dot = document.createElement('span'); dot.className = 'dot dot-' + toolKind(name);
   const nm = document.createElement('span'); nm.textContent = (tag ? tag + ' ' : '') + toolLabel(name);
@@ -236,10 +247,19 @@ function approve(actionId, decision, card) {
       decision==='allow' ? 'ok' : 'no'));
 }
 
+function setRunBusy(b) {
+  const btn = $('go');
+  btn.disabled = false;
+  btn.classList.toggle('busy', b);
+  btn.textContent = b ? 'Running' : 'Run';
+}
+
 async function runTask() {
   const task = $('task').value.trim();
-  if (!task) return;
+  if (!task || $('go').classList.contains('busy')) return;
+  setRunBusy(true);
   sessionId = null;
+  planLock = false; planQueue.splice(0);
   $('sess').textContent = '-';
   $('messages').innerHTML = '';
   clearPanel('kb', 'Searching docs…'); clearPanel('queue', 'No pending actions');
@@ -249,23 +269,48 @@ async function runTask() {
 
   const res = await fetch('/v1/agents/workflow/run',
     {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({task})});
+  if (!res.ok) { setRunBusy(false); return; }
   const reader = res.body.getReader();
   const dec = new TextDecoder(); let buf = '';
-  while (true) {
-    const {done, value} = await reader.read(); if (done) break;
-    buf += dec.decode(value, {stream:true});
-    let idx;
-    while ((idx = buf.indexOf('\n\n')) >= 0) {
-      const block = buf.slice(0, idx); buf = buf.slice(idx+2);
-      const ev = (block.split('\n').find(l=>l.startsWith('event:'))||'').slice(7);
-      const data = (block.split('\n').find(l=>l.startsWith('data:'))||'').slice(6);
-      if (!ev || !data) continue;
-      let p; try { p = JSON.parse(data); } catch { continue; }
-      handleEvent(ev, p);
+  try {
+    while (true) {
+      const {done, value} = await reader.read(); if (done) break;
+      buf += dec.decode(value, {stream:true});
+      let idx;
+      while ((idx = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, idx); buf = buf.slice(idx+2);
+        const ev = (block.split('\n').find(l=>l.startsWith('event:'))||'').slice(7);
+        const data = (block.split('\n').find(l=>l.startsWith('data:'))||'').slice(6);
+        if (!ev || !data) continue;
+        let p; try { p = JSON.parse(data); } catch { continue; }
+        routeEvent(ev, p);
+      }
     }
+  } finally {
+    setRunBusy(false);
   }
 }
 
+let planLock = false;
+const planQueue = [];
+const PLAN_RUNTIME = ['tool.call', 'tool.result', 'approval.request', 'agent.done', 'agent.error'];
+function routeEvent(ev, p) {
+  if (planLock && PLAN_RUNTIME.includes(ev)) { planQueue.push([ev, p]); return; }
+  handleEvent(ev, p);
+}
+async function flushPlanQueue() {
+  planLock = false;
+  for (const [ev, p] of planQueue.splice(0)) {
+    handleEvent(ev, p);
+    await new Promise(r => setTimeout(r, 750));
+  }
+}
+function planText(p) {
+  const steps = (p.steps || []).map((s, i) =>
+    (i + 1) + ') ' + toolLabel(s.tool) + ' — ' +
+    ((s.args && Object.keys(s.args).length) ? JSON.stringify(s.args) : '(no arguments)').slice(0, 80)).join('\n');
+  return (p.reason ? p.reason + '\n\n' : '') + 'Steps:\n' + steps;
+}
 function handleEvent(ev, p) {
   switch (ev) {
     case 'agent.start':
@@ -275,8 +320,9 @@ function handleEvent(ev, p) {
       $('sess').textContent = p.session_id.slice(0, 18);
       break;
     case 'agent.plan':
-      bubble(p.reason || '', 'PLANNER', undefined, true);
       trail('agent.plan', 'planned ' + (p.steps||[]).length + ' steps');
+      planLock = true;
+      bubble(planText(p), 'PLANNER', undefined, true, flushPlanQueue);
       break;
     case 'tool.call':
       {

@@ -15,6 +15,7 @@ MODEL = os.getenv("AGENT_MODEL", "gpt-4o-mini")
 EMBED_BACKEND = os.getenv("AGENT_EMBED_BACKEND", "hash")  # hash | openai
 EMBED_MODEL = os.getenv("AGENT_EMBED_MODEL", "text-embedding-3-small")
 STEP_TIMEOUT_S = float(os.getenv("AGENT_TIMEOUT_S", "120"))
+STEP_DELAY_S = float(os.getenv("AGENT_STEP_DELAY_S", "0.8"))
 APPROVAL_TIMEOUT_S = float(os.getenv("AGENT_APPROVAL_TIMEOUT_S", "900"))
 SANDBOX_MAX_FILE_BYTES = 1024 * 1024
 SANDBOX_MAX_FILES = 50
