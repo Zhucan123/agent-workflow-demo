@@ -14,10 +14,9 @@
 cd /home/ubuntu/freelancer/agent-workflow-demo/server
 # 还原 MCP 演示文件(保证 read 输出干净)
 printf 'meeting notes:\n- refund window is 14 days\n' > data/sandbox/notes.txt
-# 服务启动参数(真实 LLM + MCP demo 模式):
-#   env AGENT_LLM_MODE=openai OPENAI_BASE_URL=... OPENAI_API_KEY=... \
-#       AGENT_MODEL=deepseek-flash AGENT_MCP_MODE=demo \
-#       .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+# 配置在 server/.env(已就位,不入库):AGENT_LLM_MODE=openai、
+#   OPENAI_BASE_URL=DeepSeek、AGENT_MODEL=deepseek-flash、AGENT_MCP_MODE=demo
+.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 # 确认 http://127.0.0.1:8000/healthz 返回 {"status":"ok","llm_provider":"openai"}
 ```
 

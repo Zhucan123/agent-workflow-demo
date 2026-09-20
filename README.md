@@ -45,10 +45,12 @@ Prerequisites: Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 ```bash
 cd server
 uv sync
+cp .env.example .env  # fill in OPENAI_API_KEY, model, MCP mode
 uv run uvicorn app.main:app --port 8000
 ```
 
-Point it at your model endpoint (or skip and run in stub mode):
+`server/.env` is loaded automatically (gitignored); environment variables
+override it. Or set options by env (stub mode works with no key at all):
 
 ```bash
 export OPENAI_BASE_URL=https://api.deepseek.com/v1   # OpenAI / DeepSeek / Qwen / Ollama all work
