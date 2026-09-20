@@ -13,7 +13,7 @@
 ```bash
 cd /home/ubuntu/freelancer/agent-workflow-demo/server
 # 还原 MCP 演示文件(保证 read 输出干净)
-printf 'meeting notes:\n- refund window is 14 days\n' > data/sandbox/notes.txt
+cp data/sandbox/notes.txt.example data/sandbox/notes.txt
 # 配置在 server/.env(已就位,不入库):AGENT_LLM_MODE=openai、
 #   OPENAI_BASE_URL=DeepSeek、AGENT_MODEL=deepseek-flash、AGENT_MCP_MODE=demo
 .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
