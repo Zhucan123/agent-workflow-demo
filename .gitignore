@@ -5,6 +5,7 @@ __pycache__/
 server/data/db/
 server/data/sandbox/*
 !server/data/sandbox/.gitkeep
+!server/data/sandbox/notes.txt.example
 uv.lock.old
 target/
 *.log
