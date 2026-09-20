@@ -1,0 +1,11 @@
+1
+00:00:40,000 --> 00:00:45,000
+PLANNER - reasoning plus a step list
+
+2
+00:00:50,000 --> 00:00:54,000
+KNOWLEDGE HITS - semantic search over company docs
+
+3
+00:00:55,000 --> 00:01:00,000
+HITL APPROVAL - the agent waits for a human decision
