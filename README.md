@@ -4,6 +4,14 @@
 > tool executor, HITL review — streamed over SSE. Includes a Spring Boot
 > integration client.
 
+## Demo
+
+[![Watch the demo](https://img.youtube.com/vi/Byowq-z1ju8/maxresdefault.jpg)](https://youtu.be/Byowq-z1ju8)
+
+1.5-minute silent walkthrough on a real LLM (DeepSeek): planning → RAG
+knowledge hits → MCP external workspace reads → HITL approval gate →
+audit trail replay.
+
 This repository is a self-contained reference implementation of the agent
 architecture used in production at AI product companies: a **Planner
 agent** decomposes a task, a **Tool Executor** calls real tools with
